@@ -10,6 +10,8 @@
 - 添加了新功能：
   - 现在，superIdentYwaf可以自己选择是否重定向了。
   - superIdentYwaf添加了并行化的批量测试功能，用户可以提供一个待测试网站文件(.csv、.txt)路径，superIdentYwaf将读取文件内的网站然后进行批量测试。
+![image](https://github.com/user-attachments/assets/271481f5-572a-48df-96dd-cf0317c07ae3)
+
 
 ## 不足之处
 因为没有整体改进，identYwaf该有的问题我这个全部继承了。然后就是我这个45案例测试因为大大加快了，导致45案例测试那里时常就是过不了，具体原因我没找出来，干脆就当个鸵鸟，反正作业已经做到这种程度了，我就不管了
