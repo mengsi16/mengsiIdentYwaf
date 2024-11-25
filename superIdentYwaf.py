@@ -37,9 +37,11 @@ if PY3:
     import requests
     from myquote import custom_quote as quote
     from requests.cookies import RequestsCookieJar
+    from urllib.parse import urlparse
     session = requests.Session()
     session.cookies = RequestsCookieJar()
     quote = quote
+    urlparse = urlparse
 
 NAME = "identYwaf"
 VERSION = "first"
@@ -102,7 +104,7 @@ heuristic = None
 chained = False
 locked_code = None
 locked_regex = None
-non_blind = set()
+# non_blind = set()
 seen = set()
 blocked = []
 servers = set()
@@ -126,6 +128,9 @@ class OPTIONS(optparse.OptionParser):
         self.debug = None
         self.fast = None
         self.lock =None
+        # self.test_file = None
+        # self.wafname_list = {}
+        # self.test = False
 
 options = OPTIONS()
 
@@ -195,8 +200,9 @@ def parse_args():
     parser.add_option("--code", dest="code", type=int, help="Expected HTTP code in rejected responses")
     parser.add_option("--string", dest="string", help="Expected string in rejected responses")
     parser.add_option("--post", dest="post", action="store_true", help="Use POST body for sending payloads")
-    parser.add_option("--allow_redirect", default="True", dest="allow_redirect", action="store_true", help="If set False then requests will not redirect")
-    parser.add_option("--input-file", default=None, dest="input_file", help="The targets' file path")
+    parser.add_option("-a","--allow-redirect", default="True", dest="allow_redirect", action="store_true", help="If set False then requests will not redirect")
+    parser.add_option("-i","--input-file", default=None, dest="input_file", help="The targets' file path")
+    # parser.add_option("--test-file", default=None, dest="test_file", help="Test tool's accuracy and efficiency")
     parser.add_option("--debug", dest="debug", action="store_true", help=optparse.SUPPRESS_HELP)
     parser.add_option("--fast", dest="fast", action="store_true", help=optparse.SUPPRESS_HELP)
     parser.add_option("--lock", dest="lock", action="store_true", help=optparse.SUPPRESS_HELP)
@@ -217,26 +223,29 @@ def parse_args():
     except SystemExit:
         raise
     # arg2
-    # sys.argv += ['sogou.com']+['baidu.com', 'bing.com', '81.69.87.198']
+    # target_list += ['http://12.69.110.212', 'http://75.119.208.80', 'http://109.234.161.15'] # +['baidu.com', 'bing.com', '81.69.87.198']
 
     options.targets = []
-    if len(target_list) > 1:
-        # url = sys.argv[-1]
-        # if not url.startswith("http"):
-        #     url = "http://%s" % url
-        # options.url = url
-        for target in target_list:
-            if not target.startswith("http"):
-                target = "http://" + target
-            options.targets.append(target)
-    elif options.input_file == None:
-        parser.print_help()
-        raise SystemExit
+    if options.input_file == None:
+        if len(target_list) > 0:
+            # url = sys.argv[-1]
+            # if not url.startswith("http"):
+            #     url = "http://%s" % url
+            # options.url = url
+            for target in target_list:
+                if not target.startswith("http"):
+                    target = "http://" + target
+                options.targets.append(target)
+        else:
+            parser.print_help()
+            raise SystemExit
+
 
     for key in DEFAULTS:
         if getattr(options, key, None) is None:
             setattr(options, key, DEFAULTS[key])
 
+import csv
 def init():
     global options
     os.chdir(os.path.abspath(os.path.dirname(__file__)))
@@ -271,8 +280,24 @@ def init():
                         target = "http://" + target
                     if target not in options.targets:
                         options.targets.append(target)
-        elif not options.targets:
+        else:
             exit(colorize("[x] file '%s' does not exist" % options.input_file))
+
+    # if options.test_file:
+    #     options.test = True
+    #     options.wafname_dict = {}
+    #     if os.path.isfile(options.test_file) and (options.test_file.endswith(".csv") or options.test_file.endswith(".txt")):
+    #         print(colorize("[o] loading test target list..."))
+    #         with open(options.test_file, mode='r', encoding='utf-8') as file:
+    #             lines = file.readlines()
+    #         for line in lines[1:]:  # 从第二行开始
+    #             line = line.strip()  # 去掉首尾的空格和换行符
+    #             if line:  # 确保行不为空
+    #                 wafname, url = line.split(",")  # 假设文件是以逗号分隔的
+    #                 options.wafname_dict[url] = wafname
+    #                 options.targets.append(url)
+    #     else:
+    #         exit(colorize("[x] file '%s' does not exist" % options.test_file))
 
     if options.proxy:
         session.proxies.update({"http": options.proxy, "https": options.proxy})
@@ -340,7 +365,6 @@ def retrieve(target, data=None):
     match = re.search(r"(?im)^Server: (.+)", retval[RAW])
     retval[SERVER] = match.group(1).strip() if match else ""
     return retval
-
 
 import aiohttp
 ENCODING_TRANSLATIONS = {
@@ -476,17 +500,17 @@ def check_payload(target, payload, original, heuristic, protection_regex=GENERIC
                 servers.add(re.sub(r"\s*\(.+\)\Z", "", intrusive[SERVER]))
                 if len(servers) > 1:
                     chained = True
-                    info += "\n" + colorize("[!] multiple (reactive) rejection HTTP 'Server' headers detected (%s)" % ', '.join("'%s'" % _ for _ in sorted(servers)))
+                    # info += "\n" + colorize("[!] multiple (reactive) rejection HTTP 'Server' headers detected (%s)" % ', '.join("'%s'" % _ for _ in sorted(servers)))
 
             if intrusive[HTTPCODE]:
                 codes.add(intrusive[HTTPCODE])
                 if len(codes) > 1:
                     chained = True
-                    info += "\n" + colorize("[!] multiple (reactive) rejection HTTP codes detected (%s)" % ', '.join("%s" % _ for _ in sorted(codes)))
+                    # info += "\n" + colorize("[!] multiple (reactive) rejection HTTP codes detected (%s)" % ', '.join("%s" % _ for _ in sorted(codes)))
 
             if heuristic and heuristic[HTML] and intrusive[HTML] and difflib.SequenceMatcher(a=heuristic[HTML] or "", b=intrusive[HTML] or "").quick_ratio() < QUICK_RATIO_THRESHOLD:
                 chained = True
-                info += "\n" +  colorize("[!] multiple (reactive) rejection HTML responses detected")
+                # info += "\n" +  colorize("[!] multiple (reactive) rejection HTML responses detected")
 
     if payload == HEURISTIC_PAYLOAD:
         heuristic = intrusive
@@ -504,60 +528,10 @@ def non_blind_check(raw, silent=False):
         for _ in match.groupdict():
             if match.group(_):
                 waf = re.sub(r"\Awaf_", "", _)
-                non_blind.add(waf)
                 if not silent:
                     info += colorize("[+] non-blind match: '%s'%s" % (format_name(waf), 20 * ' '))
     return retval, info
 
-# async def parellel_test(target, original, intrusive, heuristic, protection_regex, payloads, hostname):
-#     global options, DATA_JSON
-#     from concurrent.futures import ThreadPoolExecutor
-#     loop = asyncio.get_event_loop()
-#     blocked = []
-#     def execute_payload(target, payloadname: str, payload, original, protection_regex, delay, counter):
-#         # intrusive 在parellel_test域中更新
-#         nonlocal intrusive, heuristic, blocked
-#         # global blocked
-#         # t1 = time.time()
-#         time.sleep(random.uniform(0, delay))
-#
-#         if counter % VERIFY_OK_INTERVAL == 0:
-#             for i in xrange(VERIFY_RETRY_TIMES):
-#                 if not check_payload(target, str(random.randint(1, 9)), original, heuristic, protection_regex):
-#                     break
-#                 elif i == VERIFY_RETRY_TIMES - 1:
-#                     exit(colorize("[x] host '%s' seems to be misconfigured or rejecting benign requests%s" % (hostname, (" (%d: '<title>%s</title>')" % (intrusive[HTTPCODE], intrusive[TITLE].strip())) if intrusive[TITLE] else "")))
-#                 else:
-#                     time.sleep(random.randint(0,5))
-#         # asrg2
-#         last, intrusive, heuristic = check_payload(target, payload, original, heuristic, protection_regex)
-#         # asrg1
-#         non_blind_check(intrusive[RAW])
-#         signature = struct.pack(">H", ((calc_hash(payload, binary=False) << 1) | last) & 0xffff)
-#         # 创建字典来保存返回值
-#         result_dict = {
-#             payloadname: {
-#                 'last': last,
-#                 'payload': payload,
-#                 'signature': signature,
-#                 'results': 'x' if last else '.',
-#             }
-#         }
-#         if last and payloadname not in blocked:
-#             blocked.append(payloadname)
-#         # t2 = time.time()
-#         # sys.stdout.write(colorize("check {} cost time = {:.2f} seconds\n".format(payloadname, t2-t1)))
-#         return result_dict
-#
-#     # 用于多线程执行的函数
-#     async def process_payloads(target, original, payloads, protection_regex):
-#         global options
-#         with ThreadPoolExecutor(max_workers=64) as executor:
-#             futures = [loop.run_in_executor(executor, execute_payload, target, item.split("::", 1)[0], item.split("::", 1)[1], original, protection_regex, options.delay, counter) for item, counter in zip(payloads, range(len(payloads)))]
-#             results = await asyncio.gather(*futures)
-#         return results
-#     results2 = loop.run_until_complete(process_payloads(target=target, original=original, payloads=payloads, protection_regex=protection_regex))
-#     return results2
 async def parellel_test(target, original, intrusive, heuristic, protection_regex, payloads, hostname):
     global options, DATA_JSON
     loop = asyncio.get_event_loop()
@@ -688,8 +662,8 @@ import asyncio
 async def target_test(target):
     # 因为需要批量检查target，所以这里就尽量减少输出的内容，保证检测界面的简洁性，最后再将检测结果统一输出
     global HEURISTIC_PAYLOAD, DATA_JSON
+    print(colorize("[i] checking target '%s'..." % target))
     hostname = target.split("//")[-1].split("/")[0].split(":")[0]
-    print(colorize("[i] checking hostname '%s'..." % hostname))
     res = {target:{}}
     res[target]["ANTI_ROBOT"] = False
     res[target]["host"] = None
@@ -698,7 +672,7 @@ async def target_test(target):
     res[target]["challenge"] = None
     res[target]["INTRUSIVE"] = None
     res[target]["HEURISTIC"] = None
-    res[target]["NON_BLIND_FOUND"] = None
+    res[target]["BLIND_CHECK_INFO"] = None
     res[target]["SIGNATURE"] = b""
     res[target]["RESULTS"] = ""
     res[target]["INFO"] = ""
@@ -721,21 +695,21 @@ async def target_test(target):
 
     if original[HTTPCODE] is None:
         # exit(colorize("[x] missing valid response"))
-        res[target]["INFO"] += "\n" + colorize("[x] missing valid response")
+        res[target]["INFO"] += "\n" + colorize("[x] missing valid response. Your IP may be banned or the website has not alived")
         return res
         # continue
 
     if not any((options.string, options.code)) and original[HTTPCODE] >= 400:
         if original[HTTPCODE] < 500:
-            check, blind_check_info = non_blind_check(original[RAW])
-            res[target]["INFO"] += "\n" + blind_check_info
-            res[target]["INFO"] += "\n" + colorize("[x] access to host '%s' seems to be restricted%s. The website may be shielded by an unknown WAF." % (hostname, (
-                        " (%d: '<title>%s</title>')" % (original[HTTPCODE], original[TITLE].strip())) if original[TITLE] else ""))
+            check, blind_check_info  = non_blind_check(original[RAW])
+            res[target]["BLIND_CHECK_INFO"] = blind_check_info
+            res[target]["INFO"] += "\n" + colorize("[x] access to host '%s' seems to be restricted%s. The website may be shielded by '%s' WAF." % (hostname, (
+                        " (%d: '<title>%s</title>')" % (original[HTTPCODE], original[TITLE].strip())) if original[TITLE] else "", blind_check_info if check else 'an unknown'))
             # res[target]["ORIGINAL_HTTPCODE"] = original[HTTPCODE]
             return res
         else:
-            check, blind_check_info = non_blind_check(original[RAW])
-            res[target]["INFO"] += "\n" + blind_check_info
+            check, blind_check_info,  = non_blind_check(original[RAW])
+            res[target]["BLIND_CHECK_INFO"] = blind_check_info
             res[target]["INFO"] += "\n" + colorize(
                 "[x] access to host '%s' seems to be restricted%s" % (
                 hostname, (" (%d: '<title>%s</title>')" % (original[HTTPCODE], original[TITLE].strip())) if original[TITLE] else ""))
@@ -772,6 +746,7 @@ async def target_test(target):
         if not check:
             nbc, blind_check_info = non_blind_check(intrusive[RAW])
             res[target]["INFO"] += "\n" + blind_check_info
+            res[target]["BLIND_CHECK_INFO"] = blind_check_info
             if not nbc:
                 res[target]["INFO"] += "\n" + colorize("[x] unable to continue due to static responses%s" % (" (captcha)" if re.search(r"(?i)captcha", intrusive[RAW]) is not None else ""))
             elif challenge is None:
@@ -792,8 +767,7 @@ async def target_test(target):
         res[target]["INFO"] += "\n" + colorize(("[i] rejected summary: %d ('%s%s')" % (intrusive[HTTPCODE], ("<title>%s</title>" % intrusive[TITLE]) if intrusive[TITLE] else "","" if not _ or intrusive[HTTPCODE] < 400 else ("...%s" % _))).replace(" ('')", ""))
 
     found, blind_check_info = non_blind_check(intrusive[RAW] if intrusive[HTTPCODE] is not None else original[RAW])
-    res[target]["NON_BLIND_FOUND"] = found
-    res[target]["INFO"] += "\n" + blind_check_info
+    res[target]["BLIND_CHECK_INFO"] = blind_check_info
 
     if not found:
         res[target]["INFO"] += "\n" + colorize("[-] non-blind match: -")
@@ -826,9 +800,9 @@ async def target_test(target):
     '''-----------------------------------------------------------------------------------------------------------------------------------------------------'''
     return res
 
-
+accuracy = 0
 async def run():
-    global options, wafname
+    global options, wafname, accuracy
     # 因为options.url换成了options.targets，所以所有关于使用options.url的函数都得变成传参的函数
     # hostname = options.url.split("//")[-1].split('/')[0].split(':')[0]
     tasks = [asyncio.create_task(target_test(target)) for target in options.targets]
@@ -836,16 +810,25 @@ async def run():
     for target, results in zip(options.targets, all_results):
         print()
         print(f"[i] Results for {target}")
-        if results[target].get("ERROR", None):
-            print(results[target]["ERROR"])
-            continue
-        for info in results[target]["INFO"].split("\n"):
-            if info:
-                print(info)
-        if results[target]["SIGNATURE"] != b"" and results[target]["RESULTS"] and results[target]["ORIGINAL"]:
-            output_info(results[target]["SIGNATURE"], results[target]["RESULTS"], results[target]["ORIGINAL"])
-        else:
-            continue
+        flag = False
+        if results:
+            if results[target].get("ERROR", None):
+                print(results[target]["ERROR"])
+                continue
+            if results[target].get("BLIND_CHECK_INFO", None):
+                print(results[target]["BLIND_CHECK_INFO"])
+                flag = True
+            for info in results[target]["INFO"].split("\n"):
+                if info:
+                    print(info)
+            if results[target]["SIGNATURE"] != b"" and results[target]["RESULTS"] and results[target]["ORIGINAL"]:
+                if results[target]["RESULTS"] == ".............................................":
+                    print(f"[x] host {target} does not seem to be protected")
+                    continue
+                output_info(results[target]["SIGNATURE"], results[target]["RESULTS"], results[target]["ORIGINAL"])
+                continue
+            if not flag:
+                print(f"[x] host {target} does not find any waf.")
 
 
 
